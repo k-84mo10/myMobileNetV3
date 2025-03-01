@@ -206,6 +206,6 @@ logging.info("学習曲線のプロットを保存")
 
 plt.show()
 
-torch.save(model.state_dict(), f'{result_dir}/final_model.pth')
+torch.save(model.state_dict(), f'{result_dir}/mobilenetv3_smallfinal_model.pth')
 logging.info("最終モデルを保存")
 logging.info("学習完了")
