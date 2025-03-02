@@ -63,7 +63,7 @@ logging.info(f"使用GPU: {gpu}")
 data_transforms = {
     'train': transforms.Compose([
         transforms.Resize((img_size, img_size)),
-        transforms.RandomHorizontalFlip(),
+        # transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
     ]),
@@ -83,9 +83,12 @@ image_datasets = {
     'val': datasets.ImageFolder(val_dir, transform=data_transforms['val'])
 }
 
+num_workers = 8  # 環境に応じて変更
+batch_size = 64  # 計算リソースに応じて変更
+
 dataloaders = {
-    'train': DataLoader(image_datasets['train'], batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True),
-    'val': DataLoader(image_datasets['val'], batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+    'train': DataLoader(image_datasets['train'], batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True),
+    'val': DataLoader(image_datasets['val'], batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
 }
 
 logging.info("データセットのロード完了")
@@ -101,21 +104,19 @@ logging.info(f"使用デバイス: {device}")
 # MobileNetV3-Small モデル構築
 model = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.DEFAULT)
 
-# 特徴抽出部分の一部を固定
-for param in list(model.features.parameters())[:5]:  # 最初の5層を固定
+# 特徴抽出部分の一部を固定（10層まで）
+for param in list(model.features.parameters())[:10]:
     param.requires_grad = False
 
 # 最終層を変更
 model.classifier[3] = nn.Linear(model.classifier[3].in_features, num_classes)
 model = model.to(device)
 
-logging.info(f"モデル: MobileNetV3-Small（最終層を {num_classes} クラスに変更）")
-
 # -------------------------
 # 損失関数と最適化
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.AdamW(model.classifier.parameters(), lr=learning_rate)
-scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+optimizer = optim.SGD(model.classifier.parameters(), lr=learning_rate, momentum=0.9, weight_decay=1e-4)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5)
 
 # -------------------------
 # 訓練と検証ループ
@@ -131,21 +132,14 @@ for epoch in range(epochs):
     print('-' * 10)
 
     for phase in ['train', 'val']:
-        if phase == 'train':
-            model.train()
-        else:
-            model.eval()
+        model.train() if phase == 'train' else model.eval()
         
-        running_loss = 0.0
-        running_corrects = 0
-
+        running_loss, running_corrects = 0.0, 0
         dataloader = dataloaders[phase]
         progress_bar = tqdm(dataloader, desc=phase)
         
         for inputs, labels in progress_bar:
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-
+            inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
 
             with torch.set_grad_enabled(phase == 'train'):
@@ -177,11 +171,9 @@ for epoch in range(epochs):
             if epoch_acc > best_acc:
                 best_acc = epoch_acc
                 torch.save(model.state_dict(), f'{result_dir}/mobilenetv3_small_best_model.pth')
-                logging.info(f"新しいベストモデルを保存: Acc {best_acc:.4f}")
                 print("Best model saved!")
 
-    scheduler.step()
-    print()
+    scheduler.step(epoch_loss)
 
 # -------------------------
 # 学習曲線のプロット
@@ -206,6 +198,4 @@ logging.info("学習曲線のプロットを保存")
 
 plt.show()
 
-torch.save(model.state_dict(), f'{result_dir}/mobilenetv3_smallfinal_model.pth')
-logging.info("最終モデルを保存")
-logging.info("学習完了")
+print("学習完了 🚀")
