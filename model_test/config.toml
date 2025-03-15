@@ -1,0 +1,7 @@
+[path]
+result_dir = "../thai/result/20250302T090633"
+model_name = "mobilenetv3_small_best_model.pth"
+dataset_path = "../thai/data/mydesk/mydesk_dataset/val"
+
+[gpu]
+gpu_index = 1
